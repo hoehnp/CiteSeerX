@@ -23,28 +23,28 @@ import edu.psu.citeseerx.domain.DomainTransformer;
 import edu.psu.citeseerx.domain.ExternalLink;
 import edu.psu.citeseerx.domain.Hub;
 import edu.psu.citeseerx.domain.PDFRedirect;
+import edu.psu.citeseerx.domain.RepositoryService;
 import edu.psu.citeseerx.domain.Tag;
 import edu.psu.citeseerx.domain.ThinDoc;
 import edu.psu.citeseerx.domain.UniqueAuthor;
 import edu.psu.citeseerx.myciteseer.web.utils.MCSUtils;
+import edu.psu.citeseerx.repository.RepositoryMap;
+import edu.psu.citeseerx.repository.RepositoryUtilities;
 import edu.psu.citeseerx.utility.GeneratePDFRedirectURL;
 import edu.psu.citeseerx.utility.SafeText;
 import edu.psu.citeseerx.webutils.RedirectUtils;
 import edu.psu.citeseerx.myciteseer.domain.Account;
-import edu.psu.citeseerx.dao2.RepositoryMap;
 import org.springframework.web.servlet.mvc.Controller;
 import org.springframework.web.servlet.ModelAndView;
-import org.springframework.http.ResponseEntity;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.lang.RuntimeException;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.ResponseStatus;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -54,11 +54,21 @@ import java.util.Map;
 /**
  * Provides model objects to document summary view.
  * @author Isaac Councill
- * Version: $Rev$ $Date$
+ * @version $Rev$ $Date$
  */
 public class ViewDocController implements Controller {
 
 	private CSXDAO csxdao;
+
+	private RepositoryService repositoryService;
+
+	public RepositoryService getRepositoryService() {
+		return repositoryService;
+	}
+
+	public void setRepositoryService(RepositoryService repositoryService) {
+		this.repositoryService = repositoryService;
+	}
 
 	public void setCSXDAO (CSXDAO csxdao) {
 		this.csxdao = csxdao;
@@ -236,28 +246,8 @@ public class ViewDocController implements Controller {
 		List<String> urls = getClusterURLs(doc.getClusterID());
 
 		Long clusterID = doc.getClusterID();
-		List<ThinDoc> citations = null;
-		if (clusterID != null) {
-			citations = citedao.getCitedDocuments(clusterID, 0, 50);
-			for (Object cite : citations) {
-				SolrSelectUtils.prepCitation((ThinDoc)cite);
-			}
-			Collections.sort(citations, new CitationComparator());
-		}
-                List<String> citationContexts = new ArrayList<String>();
-                for (ThinDoc citation : citations){
-                    String context = citedao.getContext(clusterID, citation.getCluster());
-                    if (context != null){
-                        citationContexts.add(context);
-                    } else{
-                        citationContexts.add("");
-                    }
-                }
 
                 String repID = doc.getFileInfo().getDatum(DocumentFileInfo.REP_ID_KEY);
-
-		// Obtain citation chart data.
-		String chartData = csxdao.getCiteChartData(doi);
 
 		String bibtex =
 				BiblioTransformer.toBibTeX(DomainTransformer.toThinDoc(doc));
@@ -281,6 +271,9 @@ public class ViewDocController implements Controller {
 		// Obtain the hubUrls that points to this document.
 		List<Hub> hubUrls = csxdao.getHubs(doi);
 
+		//List<String> keyphrases = Arrays.asList("foo", "bar", "baz", "qux");
+		List<String> keyphrases = csxdao.getKeyphrase(doi);
+
 		model.put("pagetype", "summary");
 		model.put("pagetitle", title);
 		model.put("pagedescription", "Document Details (Isaac Councill, " +
@@ -289,7 +282,7 @@ public class ViewDocController implements Controller {
 		model.put("title", title);            
 		model.put("authors", authors);
 		model.put("uauthors", uauthors);
-		model.put("abstract", abs);
+		model.put("abstractText", abs);
 		model.put("venue", venue);
 		model.put("year", year);
 		model.put("urls", urls);
@@ -299,14 +292,12 @@ public class ViewDocController implements Controller {
 		model.put("ncites", doc.getNcites());
 		model.put("selfCites", doc.getSelfCites());
 		model.put("tags", tags);
-		model.put("citations", citations);
-                model.put("citationContexts", citationContexts);
 		model.put("elinks", eLinks);
-		model.put("fileTypes", csxdao.getFileTypes(doi, repID));
-		model.put("chartdata", chartData);
+		model.put("fileTypes", RepositoryUtilities.getFileTypes(repositoryService, doi, rep));
 		model.put("hubUrls", hubUrls);
 		model.put("pdfRedirectUrl", pdfRedirectURL);
 		model.put("pdfRedirectLabel", pdfRedirectLabel);
+		model.put("keyphrases", keyphrases);
 
 		String banner = csxdao.getBanner();
 		if (banner != null && banner.length() > 0) {
@@ -342,16 +333,3 @@ public class ViewDocController implements Controller {
 	}
 	
 }  //- ViewDocController
-
-
-class CitationComparator implements Comparator<ThinDoc> {
-	public int compare(ThinDoc o1, ThinDoc o2) {
-		if (o1.getNcites() > o2.getNcites()) {
-			return -1;
-		}
-		if (((ThinDoc)o1).getNcites() < ((ThinDoc)o2).getNcites()) {
-			return 1;
-		}
-		return 0;
-	} //- compare
-} //- class CitationComparator
